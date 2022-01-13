@@ -77,7 +77,7 @@ defmodule LogicalFile do
 
   @doc """
   `insert/3` inserts a new `Section` into the `LogicalFile` at the specified
-  logical line number `at_line` and containing the contents of the `source_path.
+  logical line number `at_line` and containing the contents of the `source_path`.
 
   It guarantees that all sections and the logical file remains contiguous.
 
