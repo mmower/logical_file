@@ -14,4 +14,15 @@ defmodule LogicalFile.Macros.IncludeTest do
     assert "alpha" = LogicalFile.line(file, 6)
   end
 
+  test "double include" do
+    file = LogicalFile.read(
+      "test/support",
+      "double_main.source",
+      [Include.invocation(expr: ~r/^\s*%\((?<file>.*)\)/)]
+    )
+
+    assert 16 = LogicalFile.size(file)
+    assert "alpha" = LogicalFile.line(file, 7)
+  end
+
 end

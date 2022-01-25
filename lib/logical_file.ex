@@ -76,6 +76,20 @@ defmodule LogicalFile do
   end
 
   @doc """
+  `lines/2` takes a `LogicalFile` and a range of logical line numbers and
+  returns a list of tuples in the form `{file, line}` for the corresponding
+  lines.
+  """
+  def lines(%LogicalFile{} = file, logical_line_range)
+      when is_struct(logical_line_range, Range) do
+    logical_line_range
+    |> Enum.reduce([], fn logical_lno, lines ->
+      [line(file, logical_lno) | lines]
+    end)
+    |> Enum.reverse()
+  end
+
+  @doc """
   `insert/3` inserts a new `Section` into the `LogicalFile` at the specified
   logical line number `at_line` and containing the contents of the `source_path`.
 
@@ -94,21 +108,38 @@ defmodule LogicalFile do
         %Section{} = insert_section,
         at_line
       ) do
-    with sections = Map.values(sections),
-         {before, target, rest} = partition_sections(sections, at_line) do
-      if is_nil(target),
-        do: raise("Unable to partition: line:#{at_line} is not in any source section.")
 
-      {pre, post} = Section.split(target, at_line)
-      before = before ++ [pre]
-      rest = [post | rest]
+    sections = Map.values(sections)
 
-      insert_section = Section.shift(insert_section, Section.size(pre))
+    {before, target, rest} = partition_sections(sections, at_line)
 
-      rest =
-        Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
+    if is_nil(target) do
+      raise("Unable to partition: line:#{at_line} is not in any source section.")
+    else
+      if Section.splittable?(target) do
+        {pre, post} = Section.split(target, at_line)
 
-      LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
+        before = before ++ [pre]
+        rest = [post | rest]
+
+        insert_section = Section.shift(insert_section, Section.total_size(before))
+
+        rest =
+          Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
+
+        LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
+      else
+        # If the target section is not splittable then we append the new section
+        # after it
+        before = before ++ [target]
+
+        insert_section = Section.shift(insert_section, Section.total_size(before))
+
+        rest =
+          Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
+
+        LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
+      end
     end
   end
 
@@ -202,8 +233,6 @@ defmodule LogicalFile do
     |> sections_in_order()
     |> Enum.find(fn %{range: range} -> lno in range end)
   end
-
-
 
   @doc """
   `resolve_line/2` takes a logical line number `logical_lno` and returns a

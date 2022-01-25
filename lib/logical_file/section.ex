@@ -156,6 +156,20 @@ defmodule LogicalFile.Section do
   end
 
   @doc """
+  `splittable?/1` takes a `Section` and determines whether it is splittable. In
+  general it's not splittable if it contains only one line.
+
+  ## Examples
+      iex> alias LogicalFile.Section
+      iex> section1 = Section.new("bar.source", 1..1, ["one"])
+      iex> section2 = Section.new("foo.source", 1..2, ["one", "two"])
+      iex> assert not Section.splittable?(section1)
+      iex> assert Section.splittable?(section2)
+  """
+  def splittable?(%Section{range: lo..lo}), do: false
+  def splittable?(%Section{}), do: true
+
+  @doc """
   `split/2` takes a `Section` and a logical line number `at_line` expected to be
   within the `Section` and returns a tuple `{before_section, after_section}`
   derived by splitting the contents of the Section at the specified line.
@@ -181,6 +195,7 @@ defmodule LogicalFile.Section do
       ...>  Section.split(section, 0)
       ...> end)
   """
+  def split(%Section{range: lo..lo}), do: raise "Cannot split a section containing one line!"
   def split(%Section{source_path: path, range: lo..hi = range, lines: lines}, at_line) do
     if at_line not in range, do: raise("Line specified outside range")
 
@@ -243,6 +258,20 @@ defmodule LogicalFile.Section do
   """
   def size(%Section{lines: lines}) do
     Enum.count(lines)
+  end
+
+  @doc """
+  `total_size/1` returns the number of lines contained in the given list of
+  `Section`s.
+
+  ## Examples
+      iex> alias LogicalFile.Section
+      iex> section1 = Section.new("foo.source", 1..4, ["one", "two", "three", "four"])
+      iex> section2 = Section.new("bar.source", 5..7, ["alpha", "beta", "delta"])
+      iex> assert 7 = Section.total_size([section1, section2])
+  """
+  def total_size(sections) when is_list(sections) do
+    Enum.reduce(sections, 0, fn section, acc -> acc + Section.size(section) end)
   end
 
   @doc """

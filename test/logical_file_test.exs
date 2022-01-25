@@ -44,6 +44,14 @@ defmodule LogicalFileTest do
              |> to_string()
   end
 
+  test "insert into a single line" do
+    file = LogicalFile.read("test/support", "double_include.source", [
+      Include.invocation(expr: ~r/^\s*%\((?<file>.*)\)/)
+    ])
+
+    assert 5 = LogicalFile.size(file)
+  end
+
   test "resolves lines" do
     source = LogicalFile.read("test/support", "main.source", [
       Include.invocation(expr: ~r/^\s*%\((?<file>.*)\)/),

@@ -37,24 +37,30 @@ defmodule LogicalFile.Macros.Include do
   using the next section.
   """
   def process_includes(%LogicalFile{} = file, %Regex{} = expr, from_line \\ 1) do
-    if not Enum.member?(Regex.names(expr), "file"), do: raise "Expression must capture 'file'!"
+    if not Enum.member?(Regex.names(expr), "file"), do: raise("Expression must capture 'file'!")
 
-    with section when not is_nil(section) <- LogicalFile.section_including_line(file, from_line) do
-      with {line, macro} = include when not is_nil(include) <-
-             Section.line_matching(section, expr) do
-
-        %{"file" => file_path} = Regex.named_captures(expr, macro)
-
+    case LogicalFile.section_including_line(file, from_line) do
+      nil ->
+        # we're at the end of the file
         file
-        |> LogicalFile.update_line(line, fn line -> Regex.replace(~r/./, line, " ") end)
-        |> LogicalFile.insert(file_path, line)
-        |> process_includes(expr, section.range.first)
-      else
-        nil -> process_includes(file, expr, section.range.last+1)
-      end
-    else
-      nil -> file
-    end
-  end
 
+      section ->
+        case Section.line_matching(section, expr) do
+          nil ->
+            # No match in this section, start processing from the next section
+            process_includes(file, expr, section.range.last + 1)
+
+          {line, macro} ->
+            # Found a match, include the file and rescan from the same point
+            # in case there's another include
+            %{"file" => include_file_path} = Regex.named_captures(expr, macro)
+
+            file
+            |> LogicalFile.update_line(line, fn line -> Regex.replace(~r/./, line, " ") end)
+            |> LogicalFile.insert(include_file_path, line)
+            |> process_includes(expr, section.range.first)
+        end
+    end
+
+  end
 end
