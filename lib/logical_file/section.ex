@@ -196,6 +196,8 @@ defmodule LogicalFile.Section do
       ...> end)
   """
   def split(%Section{range: lo..lo}), do: raise "Cannot split a section containing one line!"
+  def split(%Section{range: lo.._}, lo), do: raise "Cannot set split point on first line!"
+  def split(%Section{range: _..hi}, hi), do: raise "Cannot set split point on last line!"
   def split(%Section{source_path: path, range: lo..hi = range, lines: lines}, at_line) do
     if at_line not in range, do: raise("Line specified outside range")
 
@@ -226,6 +228,7 @@ defmodule LogicalFile.Section do
       iex> assert 11..14 = section.range
       iex> assert -10 = section.offset
   """
+  def shift(%Section{} = section, 0), do: section
   def shift(%Section{range: lo..hi, offset: offset} = section, by_lines) do
     section
     |> set_range((lo + by_lines)..(hi + by_lines))

@@ -55,10 +55,26 @@ defmodule LogicalFile do
   a `LogicalFile` during macro processing.
   """
   def assemble(base_path, sections) when is_list(sections) do
+    sections
+    |> Enum.map(fn %Section{range: range} -> range end)
+    |> check_contiguous()
+
     %LogicalFile{
       base_path: base_path,
       sections: sections |> Enum.map(fn section -> {section.range, section} end) |> Enum.into(%{})
     }
+  end
+
+  defp check_contiguous(range_list) do
+    pairs = Enum.zip([nil | range_list], range_list ++ [nil])
+    Enum.each(pairs, fn {r1, r2} ->
+      case {r1, r2} do
+        {nil, _} -> nil
+        {_, nil} -> nil
+        {_..hi, lo.._} when lo == hi + 1 -> nil
+        {r1, r2} -> raise "Non-contiguous ranges #{inspect(r1)} & #{inspect(r2)}!"
+      end
+    end)
   end
 
   @doc """
@@ -108,40 +124,40 @@ defmodule LogicalFile do
         %Section{} = insert_section,
         at_line
       ) do
-
     sections = Map.values(sections)
-
     {before, target, rest} = partition_sections(sections, at_line)
 
     if is_nil(target) do
       raise("Unable to partition: line:#{at_line} is not in any source section.")
     else
-      if Section.splittable?(target) do
-        {pre, post} = Section.split(target, at_line)
+      case split_strategy(target, at_line) do
+        :prepend ->
+          insert_section = Section.shift(insert_section, Section.total_size(before))
+          rest = [target | rest]
+          rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
+          LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
 
-        before = before ++ [pre]
-        rest = [post | rest]
+        :append ->
+          before = before ++ [target]
+          insert_section = Section.shift(insert_section, Section.total_size(before))
+          rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
+          LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
 
-        insert_section = Section.shift(insert_section, Section.total_size(before))
-
-        rest =
-          Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-
-        LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
-      else
-        # If the target section is not splittable then we append the new section
-        # after it
-        before = before ++ [target]
-
-        insert_section = Section.shift(insert_section, Section.total_size(before))
-
-        rest =
-          Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-
-        LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
+        :insert ->
+          {pre, post} = Section.split(target, at_line)
+          before = before ++ [pre]
+          rest = [post | rest]
+          insert_section = Section.shift(insert_section, Section.total_size(before))
+          rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
+          LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
       end
     end
   end
+
+  defp split_strategy(%Section{range: lo..lo}, _), do: :append
+  defp split_strategy(%Section{range: lo.._}, lo), do: :prepend
+  defp split_strategy(%Section{range: _..hi}, hi), do: :append
+  defp split_strategy(%Section{}, _), do: :insert
 
   @doc """
   `contains_source?/2` returns true if at least one section from the given
@@ -223,7 +239,7 @@ defmodule LogicalFile do
   ## Examples
       iex> alias LogicalFile.Section
       iex> section1 = Section.new("test/support/main.source")
-      iex> section2 = Section.new("test/support/include.source") |> Section.shift(-9)
+      iex> section2 = Section.new("test/support/include.source") |> Section.shift(Section.size(section1))
       iex> map = LogicalFile.assemble("test/support", [section1, section2])
       iex> assert ^section1 = LogicalFile.section_including_line(map, section1.range.first)
       iex> assert ^section2 = LogicalFile.section_including_line(map, section2.range.first)

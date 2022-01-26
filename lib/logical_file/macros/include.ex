@@ -41,7 +41,6 @@ defmodule LogicalFile.Macros.Include do
 
     case LogicalFile.section_including_line(file, from_line) do
       nil ->
-        # we're at the end of the file
         file
 
       section ->
@@ -55,6 +54,7 @@ defmodule LogicalFile.Macros.Include do
             # in case there's another include
             %{"file" => include_file_path} = Regex.named_captures(expr, macro)
 
+            # Note for the future, we might want to replace expr instead of the whole line
             file
             |> LogicalFile.update_line(line, fn line -> Regex.replace(~r/./, line, " ") end)
             |> LogicalFile.insert(include_file_path, line)
