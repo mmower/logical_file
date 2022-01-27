@@ -130,27 +130,28 @@ defmodule LogicalFile do
     if is_nil(target) do
       raise("Unable to partition: line:#{at_line} is not in any source section.")
     else
-      case split_strategy(target, at_line) do
+      sections = case split_strategy(target, at_line) do
         :prepend ->
           insert_section = Section.shift(insert_section, Section.total_size(before))
           rest = [target | rest]
           rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-          LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
+          before ++ [insert_section] ++ rest
 
         :append ->
           before = before ++ [target]
           insert_section = Section.shift(insert_section, Section.total_size(before))
           rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-          LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
+          before ++ [insert_section] ++ rest
 
         :insert ->
           {pre, post} = Section.split(target, at_line)
           before = before ++ [pre]
-          rest = [post | rest]
           insert_section = Section.shift(insert_section, Section.total_size(before))
+          rest = [post | rest]
           rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-          LogicalFile.assemble(base_path, before ++ [insert_section] ++ rest)
+          before ++ [insert_section] ++ rest
       end
+      LogicalFile.assemble(base_path, sections)
     end
   end
 

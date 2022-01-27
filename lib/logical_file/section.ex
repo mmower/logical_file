@@ -194,23 +194,39 @@ defmodule LogicalFile.Section do
       ...>  section = Section.new("foo.source", 1..4, ["one", "two", "three", "four"])
       ...>  Section.split(section, 0)
       ...> end)
+
+      iex> alias LogicalFile.Section
+      iex> section = Section.new("foo.source", 1..3, ["alpha", "beta", "delta"]) |> Section.shift(36)
+      iex> {s1, s2} = Section.split(section, 38)
+      iex> assert %Section{range: 37..37, offset: -36, lines: ["alpha"]} = s1
+      iex> assert %Section{range: 38..39, offset: -36, lines: ["beta", "delta"]} = s2
   """
   def split(%Section{range: lo..lo}), do: raise "Cannot split a section containing one line!"
   def split(%Section{range: lo.._}, lo), do: raise "Cannot set split point on first line!"
   def split(%Section{range: _..hi}, hi), do: raise "Cannot set split point on last line!"
-  def split(%Section{source_path: path, range: lo..hi = range, lines: lines}, at_line) do
+  def split(%Section{source_path: path, range: lo..hi = range, lines: lines, offset: offset}, at_line) do
     if at_line not in range, do: raise("Line specified outside range")
+
+    pre_range = lo..(at_line-1)
+    pre_index = lo + offset - 1 # offsets are negative
+    pre_amount = Enum.count(pre_range)
+
+    post_range = at_line..hi
+    post_index = at_line - 1 + offset
+    post_amount = Enum.count(post_range)
 
     {
       %Section{
         source_path: path,
-        range: lo..(at_line - 1),
-        lines: Enum.slice(lines, 0, at_line - 1)
+        range: pre_range,
+        offset: offset,
+        lines: Enum.slice(lines, pre_index, pre_amount)
       },
       %Section{
         source_path: path,
-        range: at_line..hi,
-        lines: Enum.slice(lines, at_line - 1, hi - at_line + 1)
+        range: post_range,
+        offset: offset,
+        lines: Enum.slice(lines, post_index, post_amount)
       }
     }
   end
