@@ -67,6 +67,7 @@ defmodule LogicalFile do
 
   defp check_contiguous(range_list) do
     pairs = Enum.zip([nil | range_list], range_list ++ [nil])
+
     Enum.each(pairs, fn {r1, r2} ->
       case {r1, r2} do
         {nil, _} -> nil
@@ -86,9 +87,9 @@ defmodule LogicalFile do
       iex> assert "%(include.source)" = LogicalFile.line(file, 6)
   """
   def line(%LogicalFile{} = file, lno) do
-    file
-    |> section_including_line(lno)
-    |> Section.line(lno)
+    with section when not is_nil(section) <- section_including_line(file, lno) do
+      Section.line(section, lno)
+    end
   end
 
   @doc """
@@ -130,27 +131,44 @@ defmodule LogicalFile do
     if is_nil(target) do
       raise("Unable to partition: line:#{at_line} is not in any source section.")
     else
-      sections = case split_strategy(target, at_line) do
-        :prepend ->
-          insert_section = Section.shift(insert_section, Section.total_size(before))
-          rest = [target | rest]
-          rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-          before ++ [insert_section] ++ rest
+      sections =
+        case split_strategy(target, at_line) do
+          :prepend ->
+            insert_section = Section.shift(insert_section, Section.total_size(before))
+            rest = [target | rest]
 
-        :append ->
-          before = before ++ [target]
-          insert_section = Section.shift(insert_section, Section.total_size(before))
-          rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-          before ++ [insert_section] ++ rest
+            rest =
+              Enum.map(rest, fn section ->
+                Section.shift(section, Section.size(insert_section))
+              end)
 
-        :insert ->
-          {pre, post} = Section.split(target, at_line)
-          before = before ++ [pre]
-          insert_section = Section.shift(insert_section, Section.total_size(before))
-          rest = [post | rest]
-          rest = Enum.map(rest, fn section -> Section.shift(section, Section.size(insert_section)) end)
-          before ++ [insert_section] ++ rest
-      end
+            before ++ [insert_section] ++ rest
+
+          :append ->
+            before = before ++ [target]
+            insert_section = Section.shift(insert_section, Section.total_size(before))
+
+            rest =
+              Enum.map(rest, fn section ->
+                Section.shift(section, Section.size(insert_section))
+              end)
+
+            before ++ [insert_section] ++ rest
+
+          :insert ->
+            {pre, post} = Section.split(target, at_line)
+            before = before ++ [pre]
+            insert_section = Section.shift(insert_section, Section.total_size(before))
+            rest = [post | rest]
+
+            rest =
+              Enum.map(rest, fn section ->
+                Section.shift(section, Section.size(insert_section))
+              end)
+
+            before ++ [insert_section] ++ rest
+        end
+
       LogicalFile.assemble(base_path, sections)
     end
   end
