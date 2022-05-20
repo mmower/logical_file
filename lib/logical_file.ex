@@ -43,7 +43,8 @@ defmodule LogicalFile do
   """
   def read(base_path, source_path, macros \\ [])
       when is_binary(source_path) and is_list(macros) do
-    with section = Section.new(Path.join(base_path, source_path)) do
+    file_path = Path.expand(Path.join(base_path, source_path))
+    with section = Section.new(file_path) do
       %LogicalFile{base_path: base_path, sections: %{section.range => section}}
       |> Macro.apply_macros(macros)
     end
