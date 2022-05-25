@@ -70,12 +70,20 @@ defmodule LogicalFile.Section do
   def new(source_path) do
     with lines = read_lines(source_path),
          line_count = Enum.count(lines) do
+      if line_count == 0 do
+        raise("Cannot create empty section from (#{source_path}!")
+      end
+
       new(source_path, 1..line_count, lines)
     end
   end
 
-  def new(source_path, range, lines, offset \\ 0) do
-    if Enum.count(lines) != Range.size(range), do: raise("Range and line count does not match!")
+  def new(source_path, %Range{} = range, lines, offset \\ 0)
+      when is_binary(source_path) and is_list(lines) and is_integer(offset) do
+    if Enum.empty?(lines), do: raise("Range line list cannot be empty! (#{source_path})")
+
+    if Enum.count(lines) != Range.size(range),
+      do: raise("Range and line count does not match! (#{source_path})")
 
     %Section{source_path: source_path, range: range, lines: lines, offset: offset}
   end
@@ -90,7 +98,7 @@ defmodule LogicalFile.Section do
       iex> assert "%(include.source)" = Section.line(section, 6)
   """
   def line(%Section{range: lo.._hi, lines: lines}, lno) do
-    Enum.at(lines, lno-lo)
+    Enum.at(lines, lno - lo)
   end
 
   @doc """
@@ -151,7 +159,7 @@ defmodule LogicalFile.Section do
   """
   def update_line(%Section{range: lo.._hi = range, lines: lines} = section, lno, fun)
       when is_function(fun) do
-    if lno not in range, do: raise "Section (#{inspect(range)}) does not contain line: #{lno}"
+    if lno not in range, do: raise("Section (#{inspect(range)}) does not contain line: #{lno}")
     %{section | lines: List.update_at(lines, lno - lo, fun)}
   end
 
@@ -169,14 +177,22 @@ defmodule LogicalFile.Section do
   def splittable?(%Section{range: lo..lo}), do: false
   def splittable?(%Section{}), do: true
 
+  defp shift_range(%Range{first: first, last: last} = range, shift_by) when is_integer(shift_by) do
+    %{range | first: first + shift_by, last: last + shift_by}
+  end
+
   @doc """
   `split/2` takes a `Section` and a logical line number `at_line` expected to be
   within the `Section` and returns a tuple `{before_section, after_section}`
   derived by splitting the contents of the Section at the specified line.
 
-  The `before_section` contains all lines up to the specified line, the
-  `after_section` contains all lines from the specified line to the end of
-  the `Section`.
+  The `before_section` contains all lines up to, but not including, the
+  specified line, the `after_section` contains all lines from the specified
+  line to the end of the `Section`.
+
+  Note: It is illegal to attempt to split a Section containing one line, or
+  to set the split point on the first or last line of a Section. In any of
+  these cases an exception is raised.
 
   ## Examples
       iex> alias LogicalFile.Section
@@ -200,34 +216,32 @@ defmodule LogicalFile.Section do
       iex> {s1, s2} = Section.split(section, 38)
       iex> assert %Section{range: 37..37, offset: -36, lines: ["alpha"]} = s1
       iex> assert %Section{range: 38..39, offset: -36, lines: ["beta", "delta"]} = s2
+
+      iex> alias LogicalFile.Section
+      iex> section = Section.new("bar.source", 29..33, ["         ", "   ", "", "end", ""], -4)
+      iex> {s1, s2} = Section.split(section, 30)
+      iex> assert %Section{range: 29..29, offset: -4, lines: ["         "]} = s1
+      iex> assert %Section{range: 30..33, offset: -4, lines: ["   ", "", "end", ""]} = s2
   """
-  def split(%Section{range: lo..lo}), do: raise "Cannot split a section containing one line!"
-  def split(%Section{range: lo.._}, lo), do: raise "Cannot set split point on first line!"
-  def split(%Section{range: _..hi}, hi), do: raise "Cannot set split point on last line!"
-  def split(%Section{source_path: path, range: lo..hi = range, lines: lines, offset: offset}, at_line) do
+  def split(%Section{range: lo..lo}), do: raise("Cannot split a section containing one line!")
+  def split(%Section{range: lo.._}, lo), do: raise("Cannot set split point on first line!")
+  def split(%Section{range: _..hi}, hi), do: raise("Cannot set split point on last line!")
+
+  def split(
+        %Section{source_path: path, range: lo..hi = range, lines: lines, offset: offset},
+        at_line
+      ) do
     if at_line not in range, do: raise("Line specified outside range")
 
-    pre_range = lo..(at_line-1)
-    pre_index = lo + offset - 1 # offsets are negative
-    pre_amount = Enum.count(pre_range)
+    pre_range = lo..(at_line - 1)
+    pre_slice = Enum.slice(lines, pre_range |> shift_range(-lo))
 
     post_range = at_line..hi
-    post_index = at_line - 1 + offset
-    post_amount = Enum.count(post_range)
+    post_slice = Enum.slice(lines, post_range |> shift_range(-lo))
 
     {
-      %Section{
-        source_path: path,
-        range: pre_range,
-        offset: offset,
-        lines: Enum.slice(lines, pre_index, pre_amount)
-      },
-      %Section{
-        source_path: path,
-        range: post_range,
-        offset: offset,
-        lines: Enum.slice(lines, post_index, post_amount)
-      }
+      Section.new(path, pre_range, pre_slice, offset),
+      Section.new(path, post_range, post_slice, offset)
     }
   end
 
@@ -245,6 +259,7 @@ defmodule LogicalFile.Section do
       iex> assert -10 = section.offset
   """
   def shift(%Section{} = section, 0), do: section
+
   def shift(%Section{range: lo..hi, offset: offset} = section, by_lines) do
     section
     |> set_range((lo + by_lines)..(hi + by_lines))
@@ -353,5 +368,41 @@ defmodule LogicalFile.Section do
     |> File.read!()
     |> String.split(~r/\R/)
   end
+end
 
+defimpl Inspect, for: LogicalFile.Section do
+  import Inspect.Algebra
+
+  def line_output(range, lines) do
+    Stream.zip([range, lines])
+    |> Enum.map(fn {idx, line} ->
+      idx_str = idx |> Integer.to_string() |> String.pad_leading(4, " ")
+      "#{idx_str}: #{line}"
+    end)
+    |> Enum.join("\n")
+  end
+
+  def inspect(
+        %LogicalFile.Section{
+          source_path: source_path,
+          range: range,
+          offset: offset,
+          lines: lines
+        },
+        opts
+      ) do
+    concat([
+      "#Section{path:\"",
+      source_path,
+      "\", range:",
+      to_doc(range, opts),
+      ", size:",
+      to_doc(Range.size(range), opts),
+      ", offset:",
+      to_doc(offset, opts),
+      ">\n",
+      line_output(range, lines),
+      "\n"
+    ])
+  end
 end

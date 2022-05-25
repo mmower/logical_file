@@ -2,7 +2,7 @@ defmodule LogicalFile.MixProject do
   use Mix.Project
 
   @name "LogicalFile"
-  @version "1.0.3"
+  @version "1.0.4"
   @source_url "http://www.apache.org/licenses/LICENSE-2.0"
   @description """
   An Elixir library for working with logical files that appear as a contiguous

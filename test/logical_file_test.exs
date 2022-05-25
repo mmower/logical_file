@@ -58,8 +58,12 @@ defmodule LogicalFileTest do
       LineComment.invocation(expr: ~r/^\s*%%/)
     ])
 
-    assert {"test/support/main.source", 1} = LogicalFile.resolve_line(source, 1)
-    assert {"test/support/include.source", 2} = LogicalFile.resolve_line(source, 7)
+
+    spath_1 = Path.expand("test/support/main.source")
+    assert {^spath_1, 1} = LogicalFile.resolve_line(source, 1)
+
+    spath_2 = Path.expand("test/support/include.source")
+    assert {^spath_2, 2} = LogicalFile.resolve_line(source, 7)
   end
 
 end

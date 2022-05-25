@@ -43,11 +43,11 @@ defmodule LogicalFile do
   """
   def read(base_path, source_path, macros \\ [])
       when is_binary(source_path) and is_list(macros) do
-    file_path = Path.expand(Path.join(base_path, source_path))
-    with section = Section.new(file_path) do
-      %LogicalFile{base_path: base_path, sections: %{section.range => section}}
+    base_path = Path.expand(base_path)
+    file_path = Path.join(base_path, source_path)
+    section = Section.new(file_path)
+    %LogicalFile{base_path: base_path, sections: %{section.range => section}}
       |> Macro.apply_macros(macros)
-    end
   end
 
   @doc """
@@ -185,8 +185,10 @@ defmodule LogicalFile do
 
   ## Examples
       iex> file = LogicalFile.read("test/support", "main.source")
-      iex> assert not LogicalFile.contains_source?(file, "test/support/player.source")
-      iex> assert LogicalFile.contains_source?(file, "test/support/main.source")
+      iex> invalid_path = Path.expand("test/support/player.source")
+      iex> assert not LogicalFile.contains_source?(file, invalid_path)
+      iex> valid_path = Path.expand("test/support/main.source")
+      iex> assert LogicalFile.contains_source?(file, valid_path)
   """
   def contains_source?(%LogicalFile{sections: sections}, source_path) do
     Enum.any?(sections, fn {_range, section} -> section.source_path == source_path end)
@@ -278,7 +280,8 @@ defmodule LogicalFile do
   ## Examples
       iex> alias LogicalFile.Macros.Include
       iex> file = LogicalFile.read("test/support", "main.source")
-      iex> assert {"test/support/main.source", 1} = LogicalFile.resolve_line(file, 1)
+      iex> path = Path.expand("test/support/main.source")
+      iex> assert {^path, 1} = LogicalFile.resolve_line(file, 1)
   """
   def resolve_line(%LogicalFile{} = file, logical_lno) do
     file
